@@ -9,12 +9,13 @@ import jade.core.Agent;
 public class BookBuyerAgent extends Agent {
 
     @Override
+    protected void setup() {
+        super.setup(); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
     protected void takeDown() {
         super.takeDown(); //To change body of generated methods, choose Tools | Templates.
     }
 
-    @Override
-    protected void setup() {
-        super.setup(); //To change body of generated methods, choose Tools | Templates.
-    }
 }
