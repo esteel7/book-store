@@ -12,8 +12,10 @@ import jade.domain.FIPANames;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import jade.proto.ContractNetResponder;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  *
@@ -21,26 +23,24 @@ import java.util.List;
  */
 public class BookSellerAgent extends Agent {
 
+    Map<String, Integer> myCatalog;
+
     @Override
     protected void setup() {
         //Readig input arguments
         Object[] args = getArguments();
         if (args.length > 0) {
-            
-            DFAgentDescription dfd = new DFAgentDescription();
-            dfd.setName(getAID());
-            ServiceDescription sd = new ServiceDescription();
-            sd.setType("book-selling");
-            sd.setName("");
-            
+            myCatalog = new HashMap();
             for (int i = 0; i < args.length; i++) {
-                sd.setName((String) args);
-                String serviceName = (String) args[i];
-                s
+                myCatalog.put((String) args[i], Integer.valueOf((String) args[i + 1]));
                 i++;
             }
-
+            //Registering services on the DF
+            register(generateServiceSet(myCatalog));
         }
+
+        System.out.println("Agent " + getLocalName() + " catalog: ");
+        System.out.println(myCatalog);
 
         System.out.println("Agent " + getLocalName() + ": Waiting for CFP...");
         MessageTemplate template = MessageTemplate.and(
@@ -52,41 +52,60 @@ public class BookSellerAgent extends Agent {
             @Override
             protected ACLMessage handleCfp(ACLMessage cfp) throws RefuseException, FailureException, NotUnderstoodException {
                 System.out.println("Agent " + getLocalName() + ": CPF received from " + cfp.getSender().getName() + "...");
-                if (evaluateProposal(cfp)) {
+                //The message must contain the name of the book needed
+                if (myCatalog.containsKey(cfp.getContent())) {
                     //Making a proposal
-                    System.out.println("Agent " + getLocalName() + ": Proposing");//Include the price
-
+                    System.out.println("Agent " + getLocalName() + ": Proposing...");
+                    ACLMessage propose = cfp.createReply();
+                    propose.setPerformative(ACLMessage.PROPOSE);
+                    propose.setContent(String.valueOf(myCatalog.get(cfp.getContent())));
+                    return propose;
                 } else {
                     //Refusing to make a proposal
                     System.out.println("Agent " + getLocalName() + ": Refuse");
-                    throw new RefuseException("evaluation-failed");
+                    ACLMessage refuse = cfp.createReply();
+                    refuse.setPerformative(ACLMessage.REFUSE);
+                    return refuse;
+//                    throw new RefuseException("evaluation-failed");
                 }
-
-                return propose;
             }
 
             @Override
             protected ACLMessage handleAcceptProposal(ACLMessage cfp, ACLMessage propose, ACLMessage accept) throws FailureException {
-                return super.handleAcceptProposal(cfp, propose, accept); //To change body of generated methods, choose Tools | Templates.
+                //If the book is still in the catalog
+                if (myCatalog.containsKey(accept.getContent())) {
+                    ACLMessage inform = accept.createReply();
+                    inform.setPerformative(ACLMessage.INFORM);
+                    inform.setContent("Thanks for buying :D");
+                    //The is eliminated from the catalog
+                    myCatalog.remove(accept.getContent());
+                    System.out.println("Agent " + getLocalName() + ": My proposal was accepted");
+                    //Deregistering the service (book) from DF
+                    register(generateServiceSet(myCatalog));
+
+                    System.out.println("Agent " + getLocalName() + ": actualized catalog -> \n" + myCatalog);
+
+                    return inform;
+                } else {
+                    ACLMessage failure = accept.createReply();
+                    failure.setPerformative(ACLMessage.INFORM);
+                    failure.setContent("Not available");
+                    return failure;
+                }
             }
 
             @Override
             protected void handleRejectProposal(ACLMessage cfp, ACLMessage propose, ACLMessage reject) {
-                super.handleRejectProposal(cfp, propose, reject); //To change body of generated methods, choose Tools | Templates.
+                System.out.println("Agent " + getLocalName() + ": My proposal was rejected...");
             }
-        }
-        );
-
-        super.setup(); //To change body of generated methods, choose Tools | Templates.
+        });
     }
 
     @Override
     protected void takeDown() {
-        super.takeDown(); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    private boolean evaluateProposal(ACLMessage cfp) {
-        return true;
+        System.out.println("Agent " + getLocalName() + " is closing...");
+        //Deregistering services from DF
+        deregister();
     }
 
     private void register(ServiceDescription sd) {
@@ -106,17 +125,47 @@ public class BookSellerAgent extends Agent {
         }
     }
 
+    private void register(Set<ServiceDescription> services) {
+        DFAgentDescription dfd = new DFAgentDescription();
+        dfd.setName(getAID());
+        for (ServiceDescription sd : services) {
+            dfd.addServices(sd);
+        }
+        try {
+            if (DFService.search(this, dfd).length > 0) {//If already registered
+                DFService.deregister(this, dfd);
+            }
+
+            DFService.register(this, dfd);
+            System.out.println("Agent " + getLocalName() + ": Registering services on the DF");
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+    }
+
     private void deregister() {
         DFAgentDescription dfd = new DFAgentDescription();
         dfd.setName(getAID());
         try {
             DFAgentDescription[] list = DFService.search(this, dfd);
-            if (list.length == 0) {
+            if (DFService.search(this, dfd).length == 0) {
                 System.out.println("Agent " + getLocalName() + ": Deregistering services from DF...");
                 DFService.register(this, dfd);
             }
         } catch (FIPAException fe) {
             fe.printStackTrace();
         }
+    }
+
+    private Set<ServiceDescription> generateServiceSet(Map<String, Integer> catalog) {
+        Set<ServiceDescription> services = new HashSet();
+        ServiceDescription sd;
+        for (String service : catalog.keySet()) {
+            sd = new ServiceDescription();
+            sd.setType("book-selling");
+            sd.setName(service);
+            services.add(sd);
+        }
+        return services;
     }
 }
