@@ -148,9 +148,9 @@ public class BookSellerAgent extends Agent {
         dfd.setName(getAID());
         try {
             DFAgentDescription[] list = DFService.search(this, dfd);
-            if (DFService.search(this, dfd).length == 0) {
+            if (DFService.search(this, dfd).length != 0) {
                 System.out.println("Agent " + getLocalName() + ": Deregistering services from DF...");
-                DFService.register(this, dfd);
+                DFService.deregister(this, dfd);
             }
         } catch (FIPAException fe) {
             fe.printStackTrace();
